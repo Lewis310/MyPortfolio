@@ -97,18 +97,11 @@ proj_dates = pd.date_range(value_series.index[-1], value_series.index[-1] + pd.T
 daily_factor = (1 + port_return) ** (1/365) if port_return else 1
 proj_vals = last_val * (daily_factor ** np.arange(len(proj_dates)))
 
-# Plot
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=value_series.index, y=value_series, mode="lines", name="Historical"))
-fig.add_trace(go.Scatter(x=proj_dates, y=proj_vals, mode="lines", name=f"Expected 1yr ({port_return*100:.2f}%)"))
-st.plotly_chart(fig, use_container_width=True)
+# Combine into one DataFrame
+proj_series = pd.Series(proj_vals, index=proj_dates, name="Expected")
+hist_series = pd.Series(value_series, name="Historical")
+chart_df = pd.concat([hist_series, proj_series], axis=1)
 
-# ---- Tech watchlist ----
-st.markdown("### Tech Watchlist")
-default_tech = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
-tech_text = st.text_area("Tickers (comma separated)", ", ".join(default_tech))
-tech_list = [t.strip().upper() for t in tech_text.split(",") if t.strip()]
+st.markdown("### Portfolio Value (Historical + 1yr Projection)")
+st.line_chart(chart_df)
 
-tech_prices = {t: get_current_price(t) for t in tech_list}
-tech_df = pd.DataFrame({"Ticker": tech_list, "Price": [tech_prices[t] for t in tech_list]})
-st.dataframe(tech_df, height=300)

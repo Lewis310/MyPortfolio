@@ -59,8 +59,15 @@ default_portfolio = pd.DataFrame([
 ])
 
 st.markdown("### Portfolio holdings")
-edited = st.experimental_data_editor(default_portfolio, num_rows="dynamic", key="portfolio_editor")
+
+# Use the correct data editor depending on Streamlit version
+if hasattr(st, "data_editor"):
+    edited = st.data_editor(default_portfolio, num_rows="dynamic", key="portfolio_editor")
+else:
+    edited = st.experimental_data_editor(default_portfolio, num_rows="dynamic", key="portfolio_editor")
+
 edited["Units"] = edited["Units"].astype(int)
+
 
 # Fetch prices
 tickers = edited["Ticker"].tolist()

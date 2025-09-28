@@ -85,10 +85,13 @@ holdings["P/L (%)"] = (holdings["P/L ($)"] / holdings["Cost Basis"]) * 100
 st.dataframe(holdings, height=250)
 
 # ---- Portfolio historical + projection ----
-combined = pd.concat(
-    [df.rename(columns={"Adj Close": t}) for t, df in price_data.items() if not df.empty],
-    axis=1
-).fillna(method="ffill")
+valid_dfs = [df.rename(columns={"Adj Close": t}) for t, df in price_data.items() if not df.empty]
+
+if valid_dfs:
+    combined = pd.concat(valid_dfs, axis=1).fillna(method="ffill")
+else:
+    combined = pd.DataFrame()
+
 
 # Weighted value series
 value_series = pd.Series(0, index=combined.index, dtype=float)

@@ -1,14 +1,19 @@
-# streamlit_portfolio_av.py
 import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 st.set_page_config(layout="wide", page_title="Stock Portfolio + Projection")
 
-# --- API Key (store in .streamlit/secrets.toml as ALPHA_VANTAGE_KEY="yourkey") ---
-API_KEY = st.secrets["ALPHA_VANTAGE_KEY"]
+# ---- API key management ----
+API_KEY = st.secrets.get("ALPHA_VANTAGE_KEY", None)
+
+if not API_KEY:
+    API_KEY = st.sidebar.text_input("Enter Alpha Vantage API key:", type="password")
+    if not API_KEY:
+        st.error("⚠️ Please enter your Alpha Vantage API key in the sidebar to continue.")
+        st.stop()
 
 # ---- Helpers ----
 @st.cache_data(ttl=3600)
@@ -94,7 +99,7 @@ port_return = sum((weights[t]/total_val)*ann_returns.get(t,0) for t in tickers i
 # Projection
 if not value_series.empty:
     last_val = value_series.iloc[-1]
-    proj_dates = pd.date_range(value_series.index[-1], value_series.index[-1] + pd.Timedelta(days=365), freq="D")
+    proj_dates = pd.date_range(value_series.index[-1], value_series.index[-1] + timedelta(days=365), freq="D")
     daily_factor = (1 + port_return) ** (1/365) if port_return else 1
     proj_vals = last_val * (daily_factor ** np.arange(len(proj_dates)))
 

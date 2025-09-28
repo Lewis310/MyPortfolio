@@ -3,18 +3,18 @@ import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide", page_title="Stock Portfolio + Projection")
 
+# --- API Key (store in .streamlit/secrets.toml as ALPHA_VANTAGE_KEY="yourkey") ---
 API_KEY = st.secrets["ALPHA_VANTAGE_KEY"]
 
 # ---- Helpers ----
 @st.cache_data(ttl=3600)
 def fetch_daily_prices(symbol: str):
     """Fetch daily adjusted close from Alpha Vantage"""
-    url = f"https://www.alphavantage.co/query"
+    url = "https://www.alphavantage.co/query"
     params = {
         "function": "TIME_SERIES_DAILY_ADJUSTED",
         "symbol": symbol,
@@ -44,7 +44,7 @@ def get_current_price(symbol: str):
     return float(df["Adj Close"].iloc[-1])
 
 # ---- UI ----
-st.title("📊 Portfolio Tracker (Alpha Vantage API)")
+st.title("📊 Portfolio Tracker (Alpha Vantage API, no Plotly)")
 
 # Default holdings
 default_portfolio = pd.DataFrame([
@@ -92,16 +92,28 @@ total_val = sum(weights.values())
 port_return = sum((weights[t]/total_val)*ann_returns.get(t,0) for t in tickers if total_val > 0)
 
 # Projection
-last_val = value_series.iloc[-1]
-proj_dates = pd.date_range(value_series.index[-1], value_series.index[-1] + pd.Timedelta(days=365), freq="D")
-daily_factor = (1 + port_return) ** (1/365) if port_return else 1
-proj_vals = last_val * (daily_factor ** np.arange(len(proj_dates)))
+if not value_series.empty:
+    last_val = value_series.iloc[-1]
+    proj_dates = pd.date_range(value_series.index[-1], value_series.index[-1] + pd.Timedelta(days=365), freq="D")
+    daily_factor = (1 + port_return) ** (1/365) if port_return else 1
+    proj_vals = last_val * (daily_factor ** np.arange(len(proj_dates)))
 
-# Combine into one DataFrame
-proj_series = pd.Series(proj_vals, index=proj_dates, name="Expected")
-hist_series = pd.Series(value_series, name="Historical")
-chart_df = pd.concat([hist_series, proj_series], axis=1)
+    # Combine into one DataFrame
+    proj_series = pd.Series(proj_vals, index=proj_dates, name="Expected")
+    hist_series = pd.Series(value_series, name="Historical")
+    chart_df = pd.concat([hist_series, proj_series], axis=1)
 
-st.markdown("### Portfolio Value (Historical + 1yr Projection)")
-st.line_chart(chart_df)
+    st.markdown("### Portfolio Value (Historical + 1yr Projection)")
+    st.line_chart(chart_df)
+else:
+    st.warning("No historical data available for selected tickers.")
 
+# ---- Tech watchlist ----
+st.markdown("### Tech Watchlist")
+default_tech = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
+tech_text = st.text_area("Tickers (comma separated)", ", ".join(default_tech))
+tech_list = [t.strip().upper() for t in tech_text.split(",") if t.strip()]
+
+tech_prices = {t: get_current_price(t) for t in tech_list}
+tech_df = pd.DataFrame({"Ticker": tech_list, "Price": [tech_prices[t] for t in tech_list]})
+st.dataframe(tech_df, height=300)

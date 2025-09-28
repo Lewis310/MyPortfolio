@@ -15,15 +15,61 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize session state
+# Data storage file
+DATA_FILE = "portfolio_data.json"
+
+def load_data():
+    """Load data from file"""
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r') as f:
+                data = json.load(f)
+                return data
+    except Exception as e:
+        st.sidebar.error(f"Error loading data: {e}")
+    return {}
+
+def save_data():
+    """Save data to file"""
+    try:
+        data_to_save = {
+            'portfolio': st.session_state.portfolio,
+            'tech_stocks': st.session_state.tech_stocks,
+            'last_api_call': st.session_state.last_api_call,
+            'api_call_count': st.session_state.api_call_count,
+            'last_save': datetime.now().isoformat()
+        }
+        with open(DATA_FILE, 'w') as f:
+            json.dump(data_to_save, f, indent=2, default=str)
+    except Exception as e:
+        st.sidebar.error(f"Error saving data: {e}")
+
+# Initialize session state with saved data
+saved_data = load_data()
+
 if 'portfolio' not in st.session_state:
-    st.session_state.portfolio = []
+    st.session_state.portfolio = saved_data.get('portfolio', [])
+
 if 'tech_stocks' not in st.session_state:
-    st.session_state.tech_stocks = {}
+    st.session_state.tech_stocks = saved_data.get('tech_stocks', {})
+
 if 'last_api_call' not in st.session_state:
-    st.session_state.last_api_call = 0
+    st.session_state.last_api_call = saved_data.get('last_api_call', 0)
+
 if 'api_call_count' not in st.session_state:
-    st.session_state.api_call_count = 0
+    st.session_state.api_call_count = saved_data.get('api_call_count', 0)
+
+# Auto-save function
+def auto_save():
+    """Auto-save data periodically"""
+    if 'last_auto_save' not in st.session_state:
+        st.session_state.last_auto_save = time.time()
+    
+    current_time = time.time()
+    # Auto-save every 30 seconds
+    if current_time - st.session_state.last_auto_save > 30:
+        save_data()
+        st.session_state.last_auto_save = current_time
 
 # API configuration with your actual key
 API_KEY = "NQG5KOWP2QXF7Z72"
@@ -60,6 +106,7 @@ def rate_limit_api():
     
     st.session_state.last_api_call = time.time()
     st.session_state.api_call_count += 1
+    auto_save()  # Auto-save after API calls
 
 def get_stock_price(symbol, use_mock=False):
     """Get current stock price from Alpha Vantage API with fallback to mock data"""
@@ -86,15 +133,12 @@ def get_stock_price(symbol, use_mock=False):
         
         if "Global Quote" in data and data["Global Quote"] and data["Global Quote"]["05. price"]:
             price = float(data["Global Quote"]["05. price"])
-            st.sidebar.success(f"✅ Live data: {symbol}")
             return price
         else:
             # Use mock data as fallback
-            st.sidebar.warning(f"📊 Using mock data for {symbol} (API limit)")
             return get_stock_price(symbol, use_mock=True)
             
     except Exception as e:
-        st.sidebar.warning(f"📊 Using mock data for {symbol} (Error: {str(e)})")
         return get_stock_price(symbol, use_mock=True)
 
 def get_stock_history(symbol, days=30):
@@ -169,22 +213,32 @@ def update_tech_stock_prices():
                 st.session_state.tech_stocks[symbol] = {
                     'name': TECH_STOCKS[symbol]["name"],
                     'price': price,
-                    'last_updated': datetime.now()
+                    'last_updated': datetime.now().isoformat()
                 }
                 success_count += 1
             time.sleep(1)  # Additional delay between calls
         
-        st.sidebar.info(f"Updated {success_count}/{len(TECH_STOCKS)} stocks")
+        auto_save()  # Save after updating all prices
+        return success_count
 
 # Sidebar navigation
 st.sidebar.title("📊 Portfolio Navigation")
-page = st.sidebar.radio("Go to", ["Dashboard", "Add Investment", "Tech Stocks", "Portfolio Details"])
+page = st.sidebar.radio("Go to", ["Dashboard", "Add Investment", "Tech Stocks", "Portfolio Details", "Data Management"])
 
-# API status
+# API status and data info
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔑 API Status")
 st.sidebar.info(f"**Calls today:** {st.session_state.api_call_count}/500")
-st.sidebar.warning("**Note:** Using mock data when API limits exceeded")
+
+# Data status
+last_save_time = saved_data.get('last_save', 'Never')
+st.sidebar.markdown("### 💾 Data Status")
+st.sidebar.info(f"**Portfolio items:** {len(st.session_state.portfolio)}\n**Last saved:** {last_save_time[:16]}")
+
+# Manual save button
+if st.sidebar.button("💾 Save Data Now"):
+    save_data()
+    st.sidebar.success("Data saved!")
 
 # Main title
 st.title("📈 Stock Portfolio Tracker")
@@ -198,8 +252,9 @@ if page == "Dashboard":
         if st.button("🔄 Update Prices", type="primary"):
             if st.session_state.api_call_count > 450:
                 st.warning("⚠️ Approaching daily API limit (500 calls)")
-            update_tech_stock_prices()
-            st.success("Prices updated!")
+            success_count = update_tech_stock_prices()
+            st.success(f"Updated {success_count} stocks!")
+            auto_save()
     
     # Portfolio summary
     if st.session_state.portfolio:
@@ -314,10 +369,12 @@ elif page == "Add Investment":
             'purchase_price': float(purchase_price),
             'purchase_date': purchase_date.strftime("%Y-%m-%d"),
             'notes': notes,
-            'added_date': datetime.now().strftime("%Y-%m-%d %H:%M")
+            'added_date': datetime.now().strftime("%Y-%m-%d %H:%M"),
+            'id': f"{symbol}_{datetime.now().strftime('%Y%m%d%H%M%S')}"  # Unique ID
         }
         
         st.session_state.portfolio.append(investment)
+        save_data()  # Save immediately after adding
         st.success(f"✅ Added {units} units of {stock_choice} to portfolio!")
         
         # Show investment summary
@@ -345,7 +402,8 @@ elif page == "Tech Stocks":
         if st.button("🔄 Update Prices", type="primary"):
             if st.session_state.api_call_count > 450:
                 st.error("❌ Daily API limit nearly reached! Using mock data.")
-            update_tech_stock_prices()
+            success_count = update_tech_stock_prices()
+            st.success(f"Updated {success_count} stocks!")
     
     if not st.session_state.tech_stocks:
         st.info("📡 Click 'Update Prices' to load tech stock data")
@@ -355,18 +413,27 @@ elif page == "Tech Stocks":
                 st.session_state.tech_stocks[symbol] = {
                     'name': data["name"],
                     'price': data["mock_price"],
-                    'last_updated': datetime.now()
+                    'last_updated': datetime.now().isoformat()
                 }
+            save_data()
             st.success("Demo data loaded!")
     else:
         # Create tech stocks table
         tech_data = []
         for symbol, data in st.session_state.tech_stocks.items():
+            # Handle both string and datetime objects for last_updated
+            last_updated = data['last_updated']
+            if isinstance(last_updated, str):
+                try:
+                    last_updated = datetime.fromisoformat(last_updated).strftime("%Y-%m-%d %H:%M")
+                except:
+                    last_updated = "Unknown"
+            
             tech_data.append({
                 'Symbol': symbol,
                 'Company': data['name'],
                 'Current Price': f"${data['price']:.2f}",
-                'Last Updated': data['last_updated'].strftime("%Y-%m-%d %H:%M")
+                'Last Updated': last_updated
             })
         
         tech_df = pd.DataFrame(tech_data)
@@ -470,4 +537,104 @@ elif page == "Portfolio Details":
                            names='Stock', 
                            title="Portfolio Allocation by Investment",
                            hover_data=['Value'])
-                fig.update_trace
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                st.metric("Total Portfolio Value", f"${total_current:,.2f}")
+                st.metric("Total Invested", f"${total_investment:,.2f}")
+                overall_pl = total_current - total_investment
+                st.metric("Overall P/L", 
+                         f"${overall_pl:,.2f}", 
+                         f"{(overall_pl/total_investment*100):.1f}%" if total_investment > 0 else "0%")
+        
+        # Portfolio management options
+        st.subheader("🛠️ Portfolio Management")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("💾 Save Portfolio Data"):
+                save_data()
+                st.success("Portfolio data saved!")
+        
+        with col2:
+            if st.button("📤 Export Portfolio to CSV"):
+                export_df = pd.DataFrame(st.session_state.portfolio)
+                csv = export_df.to_csv(index=False)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name=f"portfolio_export_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+
+elif page == "Data Management":
+    st.header("💾 Data Management")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📊 Current Data Status")
+        st.info(f"**Portfolio Items:** {len(st.session_state.portfolio)}")
+        st.info(f"**Tech Stocks Tracked:** {len(st.session_state.tech_stocks)}")
+        st.info(f"**API Calls Today:** {st.session_state.api_call_count}")
+        st.info(f"**Last Save:** {saved_data.get('last_save', 'Never')}")
+        
+        if st.button("🔄 Refresh Data Status"):
+            st.rerun()
+    
+    with col2:
+        st.subheader("🛠️ Data Actions")
+        
+        if st.button("💾 Save All Data Now"):
+            save_data()
+            st.success("All data saved successfully!")
+        
+        if st.button("📤 Export Full Data"):
+            full_data = {
+                'portfolio': st.session_state.portfolio,
+                'tech_stocks': st.session_state.tech_stocks,
+                'export_date': datetime.now().isoformat()
+            }
+            json_data = json.dumps(full_data, indent=2, default=str)
+            st.download_button(
+                label="Download JSON Backup",
+                data=json_data,
+                file_name=f"portfolio_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json"
+            )
+        
+        st.warning("⚠️ Dangerous Actions")
+        if st.button("🗑️ Clear All Data", type="secondary"):
+            if st.checkbox("I understand this will delete all my portfolio data"):
+                st.session_state.portfolio = []
+                st.session_state.tech_stocks = {}
+                save_data()
+                st.error("All data cleared!")
+    
+    # Display current portfolio for reference
+    if st.session_state.portfolio:
+        st.subheader("Current Portfolio Preview")
+        preview_data = []
+        for item in st.session_state.portfolio[:5]:  # Show first 5 items
+            preview_data.append({
+                'Stock': item['name'],
+                'Symbol': item['symbol'],
+                'Units': item['units'],
+                'Purchase Price': f"${item['purchase_price']:.2f}",
+                'Date': item['purchase_date']
+            })
+        st.dataframe(pd.DataFrame(preview_data), use_container_width=True)
+
+# Auto-save on app close and periodically
+auto_save()
+
+# Footer
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 💡 Tips")
+st.sidebar.markdown("""
+- **Data auto-saves** every 30 seconds
+- **Manual save** available in Data Management
+- **Export backups** regularly
+- **API limits:** 500 calls/day
+""")

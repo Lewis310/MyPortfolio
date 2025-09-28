@@ -253,10 +253,12 @@ elif page == "Add Investment":
         if current_price:
             st.success(f"Current price: ${current_price:.2f}")
         
+        # FIXED: Ensure all numeric types are consistent (all floats)
         purchase_price = st.number_input("Purchase Price ($)", 
                                        min_value=0.01, 
-                                       value=current_price if current_price else 100.0,
+                                       value=float(current_price) if current_price else 100.0,
                                        step=0.01,
+                                       format="%.2f",
                                        help="Enter the price per unit when you purchased")
     
     with col2:
